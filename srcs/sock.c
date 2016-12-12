@@ -2,9 +2,9 @@
 #include <stdio.h>	/* perror() */
 
 extern bool socket_open (const int ai_family,
-												 const int ai_socktype,
-												 const int ai_protocol,
-												 SOCKET *out_sock)
+		const int ai_socktype,
+		const int ai_protocol,
+		SOCKET *out_sock)
 {
 	SOCKET	sock;
 
@@ -21,16 +21,15 @@ extern bool socket_open (const int ai_family,
 
 extern void socket_close (SOCKET sock)
 {
-	if (sock >= 0)
+	if (sock < 0)
+		return ;
+	if (shutdown (sock, SHUT_RDWR))
 	{
-		if (shutdown (sock, SHUT_RDWR))
-		{
-			perror ("shutdown");
-		}
-		if (close (sock))
-		{
-			perror ("close");
-		}
+		perror ("shutdown");
+	}
+	if (close (sock))
+	{
+		perror ("close");
 	}
 }
 

@@ -20,7 +20,7 @@ typedef struct	s_sets
 	t_list		efds_head;
 }								t_sets;
 
-void		sets__initialize (t_sets *sets);
+void		sets__initialize (t_sets *sets, t_user *listen_user);
 void		sets__finalize (t_sets *sets);
 
 bool		fd_set__update (const SOCKET sock, fd_set *set, int *nfds);

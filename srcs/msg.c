@@ -10,8 +10,8 @@ extern void		msg_init (t_msg *msg)
 }
 
 extern bool		msg_update (const size_t size,
-													const char *str,
-													t_msg *msg)
+									const char *str,
+									t_msg *msg)
 {
 	if (size + msg->size > MSG_SIZE_MAX)
 	{

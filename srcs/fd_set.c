@@ -1,10 +1,12 @@
 #include "fd_set.h"
 
-extern void		sets__initialize (t_sets *sets)
+extern void		sets__initialize (t_sets *sets, t_user *listen_user)
 {
 	INIT_LIST_HEAD (&sets->rfds_head);
 	INIT_LIST_HEAD (&sets->wfds_head);
 	INIT_LIST_HEAD (&sets->efds_head);
+
+	list_push_back(&listen_user->list, &sets->rfds_head);
 }
 
 extern void		sets__finalize (t_sets *sets)

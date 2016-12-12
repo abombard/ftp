@@ -29,8 +29,8 @@
 /* read / write */
 static bool		read_from_client (const SOCKET sock, t_msg *msg, bool *ready_for_treatment)
 {
-	ssize_t		size;
-	char	    buf[ MSG_SIZE_MAX ];
+	ssize_t	size;
+	char		buf[ MSG_SIZE_MAX ];
 
 	*ready_for_treatment = false;
 	size = read (sock, buf, sizeof (buf));
@@ -46,7 +46,7 @@ static bool		read_from_client (const SOCKET sock, t_msg *msg, bool *ready_for_tr
 		*ready_for_treatment = true;
 	}
 	else
- 	{
+	{
 		if (!msg_update ((size_t)size, buf, msg))
 		{
 			LOG_ERROR ("msg_update failed socket %d msg {%.*s} buf {%.*s}", sock, (int)msg->size, msg->bytes, (int)size, buf);
@@ -64,7 +64,7 @@ static bool		read_from_client (const SOCKET sock, t_msg *msg, bool *ready_for_tr
 
 static bool		write_to_client (const SOCKET sock, t_msg *msg, bool *ready_for_treatment)
 {
-	ssize_t		size;
+	ssize_t	size;
 
 	*ready_for_treatment = false;
 	size = write (sock, msg->bytes, msg->size);
@@ -75,8 +75,8 @@ static bool		write_to_client (const SOCKET sock, t_msg *msg, bool *ready_for_tre
 	}
 	LOG_DEBUG ("write %zu bytes on %zu bytes from {%.*s} on sock %d", size, msg->size, (int)size, msg->bytes, sock);
 	memmove (msg->bytes + size,
-					 msg->bytes,
-					 msg->size - size);
+			msg->bytes,
+			msg->size - size);
 	msg->size -= size;
 	if (msg->size == 0)
 	{
@@ -99,17 +99,16 @@ static void		recv_msg (t_user *user, t_sets *sets)
 }
 
 /* accept connection */
-static bool		accept_new_connection (t_users *users,
-																		t_user **new_user)
+static bool		accept_new_connection (t_user *listen_user, t_user **new_user)
 {
-	t_user							*new;
-	SOCKET							connect_socket;
-	socklen_t						client_address_size;
+	t_user				*new;
+	SOCKET				connect_socket;
+	socklen_t			client_address_size;
 	struct sockaddr_in	client_address;
 
 	*new_user = NULL;
 	client_address_size = sizeof (client_address);
-	connect_socket = accept (users->listen->sock, (struct sockaddr *)&client_address, &client_address_size);
+	connect_socket = accept (listen_user->sock, (struct sockaddr *)&client_address, &client_address_size);
 	if (connect_socket == INVALID_SOCKET)
 	{
 		perror ("accept");
@@ -121,11 +120,12 @@ static bool		accept_new_connection (t_users *users,
 		close (connect_socket);
 		return ( false );
 	}
-	if (!user__new (users,
-									connect_socket,
-									client_address_size,
-									(struct sockaddr *)&client_address,
-									&new))
+	if (!user__new (
+			connect_socket,
+			client_address_size,
+			(struct sockaddr *)&client_address,
+			&new)
+	   )
 	{
 		LOG_DEBUG ("Too many connections");
 		if (send (connect_socket, "Too many connections\n", sizeof ("Too many connections\n") - 1, MSG_DONTWAIT) == -1)
@@ -137,7 +137,7 @@ static bool		accept_new_connection (t_users *users,
 	if (!msg_update (sizeof ("220 Welcome") - 1, "220 Welcome", &new->msg))
 	{
 		LOG_ERROR ("msg_update failed sock %d msg {220 Welcome}", connect_socket);
-		user__del (users, new);
+		user__del (new);
 		return ( false );
 	}
 	*new_user = new;
@@ -162,7 +162,7 @@ static bool		ftp_command_user (t_user *user, const t_msg in, t_msg *out)
 
 static bool		ftp_command_quit (t_user *user, const t_msg in, t_msg *out)
 {
-  (void) in;
+	(void) in;
 	ASSERT (msg_update (sizeof ("221 Goodbye") - 1, "221 Goodbye", out));
 	user->actif = false;
 	return ( true );
@@ -172,8 +172,8 @@ static bool		ftp_command_syst (t_user *user, const t_msg in, t_msg *out)
 {
 	struct utsname	buf;
 
-  (void)user;
-  (void)in;
+	(void)user;
+	(void)in;
 	if (uname (&buf))
 	{
 		perror ("uname");
@@ -188,9 +188,9 @@ static bool		ftp_command_syst (t_user *user, const t_msg in, t_msg *out)
 
 static bool		ftp_command_pwd (t_user *user, const t_msg in, t_msg *out)
 {
-  (void)in;
+	(void)in;
 	ASSERT (msg_update (sizeof ("257 ") - 1, "257 ", out));
-	ASSERT (msg_update (user->dir_cur.size, user->dir_cur.bytes, out));
+	ASSERT (msg_update (user->pwd.size, user->pwd.bytes, out));
 	return ( true );
 }
 
@@ -211,11 +211,11 @@ static bool		ftp_command_pasv (t_user *user, const t_msg in, t_msg *out)
 #include <dirent.h>
 static bool		ftp_command_pasv (t_user *user, const t_msg in, t_msg *out)
 {
-	DIR						*dp;
+	DIR			*dp;
 	struct dirent	*ep;
 
-  (void)in;
-	ASSERT (dp = opendir (user->dir_cur.bytes));
+	(void)in;
+	ASSERT (dp = opendir (user->pwd.bytes));
 	while ((ep = readdir (dp)) != NULL)
 	{
 		if (ep->d_name[0] == '.')
@@ -232,13 +232,14 @@ static bool		ftp_command_pasv (t_user *user, const t_msg in, t_msg *out)
 		}
 	}
 	ASSERT (!closedir (dp));
+	out->size -= sizeof ("\n") - 1;
 	return ( true );
 }
 
 static bool		ftp_command_not_implemented (t_user *user, const t_msg in, t_msg *out)
 {
-  (void)user;
-  (void)in;
+	(void)user;
+	(void)in;
 	ASSERT (msg_update (sizeof ("502 Comand not implemented") - 1, "502 Command not implemented", out));
 	return ( true );
 }
@@ -254,11 +255,11 @@ static bool		ftp_command_not_implemented (t_user *user, const t_msg in, t_msg *o
 typedef struct		s_ftp_command
 {
 	t_buffer	cmd;
-	bool			(*func)(t_user *, const t_msg, t_msg *);
-}									t_ftp_command;
+	bool	(*func)(t_user *, const t_msg, t_msg *);
+}			t_ftp_command;
 
 #define FTP_COMMAND_SIZE_MAX		4
-static const t_ftp_command	ftp_command_array[] = {
+static const t_ftp_command	ftp_commands[] = {
 	{ STR_TO_BUFFER ("USER"), ftp_command_user },
 	{ STR_TO_BUFFER ("SYST"),	ftp_command_syst },
 	{ STR_TO_BUFFER ("QUIT"), ftp_command_quit },
@@ -275,35 +276,53 @@ static const t_ftp_command	ftp_command_array[] = {
 
 #include <ctype.h>	/* toupper() */
 
+static bool			 ftp_command_split (t_msg msg,
+		size_t size_max,
+		t_buffer *cmd,
+		t_msg *request)
+{
+	size_t  i;
+
+	i = 0;
+	while (i < msg.size && i < size_max)
+	{
+		if (isspace(msg.bytes[i]))
+			break ;
+		cmd->bytes[i] = toupper(msg.bytes[i]);
+		i++;
+	}
+	cmd->size = i;
+	while (i < msg.size)
+	{
+		if (!isspace(msg.bytes[i]))
+			break ;
+		i++;
+	}
+	msg_init (request);
+	ASSERT (msg_update (msg.size - i,
+				msg.bytes + i,
+				request));
+	LOG_DEBUG ("Command {%.*s} request {%.*s}", (int)cmd->size, cmd->bytes, (int)request->size, request->bytes);
+	return ( true );
+}
+
 static bool		ftp_command (t_user *user, t_sets *sets)
 {
-	t_buffer	cmd;
-	char			bytes[FTP_COMMAND_SIZE_MAX];
-	t_msg			request;
-	unsigned int				i, j;
+	t_buffer			cmd;
+	char		bytes[FTP_COMMAND_SIZE_MAX];
+	t_msg		request;
+	unsigned int	i;
 
 	cmd.bytes = bytes;
+	ASSERT (ftp_command_split (user->msg, sizeof (bytes), &cmd, &request));
 	i = 0;
-	while (i < sizeof (ftp_command_array) / sizeof (ftp_command_array[0]))
+	while (i < sizeof (ftp_commands) / sizeof (ftp_commands[0]))
 	{
-		cmd.size = ftp_command_array[i].cmd.size;
-		for (j = 0; j < ftp_command_array[i].cmd.size; j ++)
+		if (cmd.size == ftp_commands[i].cmd.size &&
+				!memcmp (cmd.bytes, ftp_commands[i].cmd.bytes, ftp_commands[i].cmd.size))
 		{
-			cmd.bytes[j] = toupper (user->msg.bytes[j]);
-		}
-		if (!memcmp (cmd.bytes, ftp_command_array[i].cmd.bytes, ftp_command_array[i].cmd.size))
-		{
-      for (j = cmd.size; j < user->msg.size; j ++)
-      {
-        if (!isspace(user->msg.bytes[j]))
-          break;
-      }
-			msg_init (&request);
-			ASSERT (msg_update (user->msg.size - j,
-							            user->msg.bytes + j,
-								          &request));
 			msg_init (&user->msg);
-			if (!ftp_command_array[i].func (user, request, &user->msg))
+			if (!ftp_commands[i].func (user, request, &user->msg))
 			{
 				LOG_ERROR ("ftp_command_func failed cmd {%.*s} request {%.*s}", (int)cmd.size, cmd.bytes, (int)request.size, request.bytes);
 				return ( false );
@@ -319,7 +338,7 @@ static bool		ftp_command (t_user *user, t_sets *sets)
 	return ( false );
 }
 
-static bool		loop (t_users *users, t_sets *sets, int sig_fd)
+static bool		loop (t_user *listen_user, t_sets *sets, int sig_fd)
 {
 	t_user		*user;
 
@@ -338,10 +357,10 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 		tv.tv_usec = 0;
 
 		ready = select (sets->nfds,
-										&sets->rfds,
-										list_is_empty (&sets->wfds_head) ? NULL : &sets->wfds,
-										list_is_empty (&sets->efds_head) ? NULL : &sets->efds,
-										&tv);
+				&sets->rfds,
+				list_is_empty (&sets->wfds_head) ? NULL : &sets->wfds,
+				list_is_empty (&sets->efds_head) ? NULL : &sets->efds,
+				&tv);
 		if (ready == -1)
 		{
 			if (errno == EINTR)
@@ -358,10 +377,10 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 			break ;
 
 		/* Check for new connection */
-		if (FD_ISSET (users->listen->sock, &sets->rfds))
+		if (FD_ISSET (listen_user->sock, &sets->rfds))
 		{
-			FD_CLR (users->listen->sock, &sets->rfds);
-			if (accept_new_connection (users, &user))
+			FD_CLR (listen_user->sock, &sets->rfds);
+			if (accept_new_connection (listen_user, &user))
 				send_msg (user, sets);
 			ready --;
 		}
@@ -379,7 +398,7 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 				if (!read_from_client (user->sock, &user->msg, &ready_for_treatment))
 				{
 					LOG_ERROR ("read_from_client failed sock %d", user->sock);
-					user__del (users, user);
+					user__del (user);
 				}
 				if (ready_for_treatment)
 				{
@@ -401,7 +420,7 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 				if (!write_to_client (user->sock, &user->msg, &ready_for_treatment))
 				{
 					LOG_ERROR ("write_to_client failed sock %d msg {%.*s}", user->sock, (int)user->msg.size, user->msg.bytes);
-					user__del (users, user);
+					user__del (user);
 				}
 				if (ready_for_treatment)
 				{
@@ -409,7 +428,7 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 					if (user->actif)
 						recv_msg (user, sets);
 					else
-						user__del (users, user);
+						user__del (user);
 				}
 				ready --;
 			}
@@ -427,14 +446,14 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 		LOG_DEBUG ("clearing rfds");
 
 		user = CONTAINER_OF (sets->rfds_head.next, t_user, list);
-		user__del (users, user);
+		user__del (user);
 	}
 	while (!list_is_empty (&sets->wfds_head))
 	{
 		LOG_DEBUG ("clearing wfds");
 
 		user = CONTAINER_OF (sets->wfds_head.next, t_user, list);
-		user__del (users, user);
+		user__del (user);
 	}
 
 	return ( true );
@@ -443,8 +462,8 @@ static bool		loop (t_users *users, t_sets *sets, int sig_fd)
 void		*thread_sig (void *arg)
 {
 	t_sig_warn		*sig_warn;
-	int						sig;
-	int						size;
+	int			sig;
+	int			size;
 
 	sig_warn = arg;
 	while ( 1 )
@@ -479,7 +498,7 @@ int main (int argc, char **argv)
 
 	/* sig_warn */
 	t_sig_warn		sig_warn;
-	int						pipefd[2];
+	int				pipefd[2];
 
 	if (pipe (pipefd))
 	{
@@ -511,27 +530,31 @@ int main (int argc, char **argv)
 	SYS_ERR (pthread_create (&thread_sig_handle, NULL, &thread_sig, &sig_warn));
 
 	/* program */
-	t_users		users;
 	t_sets		sets;
 
-	char			*host;
-	int				port;
+	char		*host;
+	int			port;
+	t_user		*listen_user;
 
 	host = argv[1];
 	port = atoi (argv[2]);
-	if (!users__initialize (&users, host, port))
+	if (!users__initialize (host, port))
 	{
 		LOG_ERROR ("users__initialize failed");
 		return ( 1 );
 	}
-	sets__initialize (&sets);
+	listen_user = users__listen(host, port);
+	if (listen_user == NULL)
+	{
+		LOG_ERROR("users__listen failed host %s port %d", host, port);
+		return ( 1 );
+	}
+	sets__initialize(&sets, listen_user);
 
-	list_push_back (&users.listen->list, &sets.rfds_head);
-
-	exit_status = loop (&users, &sets, pipefd[0]) ? 0 : 1;
+	exit_status = loop(listen_user, &sets, pipefd[0]) ? 0 : 1;
 
 	sets__finalize (&sets);
-	users__finalize (&users);
+	users__finalize ();
 
 	if (exit_status)
 		kill (getpid (), SIGINT);
@@ -546,5 +569,5 @@ int main (int argc, char **argv)
 
 	LOG_DEBUG ("exit normally");
 
-  return ( true );
+	return ( true );
 }
